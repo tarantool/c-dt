@@ -26,6 +26,8 @@
 #ifndef __DT_CONFIG_H__
 #define __DT_CONFIG_H__
 
+#include "dt_rename.h"
+
 #if !defined(_MSC_VER)
 #  include <stdbool.h>
 #endif

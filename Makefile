@@ -1,6 +1,6 @@
-CC      = cc
+CC      ?= cc
 GCOV    = gcov
-CFLAGS  = $(DCFLAGS) -Wall -I. -I..
+CFLAGS  ?= $(DCFLAGS) -Wall -I. -I..
 LDFLAGS += -lc $(DLDFLAGS)
 
 SOURCES = \

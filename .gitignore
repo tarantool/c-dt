@@ -1,0 +1,17 @@
+*.o
+*.a
+*.cbp
+*.d
+*.dylib
+*.gcno
+*.gcda
+*.gcov
+*.so
+t/*.t
+
+# ignore cmake artifacts
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+install_manifest.txt
+build/
