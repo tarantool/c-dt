@@ -432,61 +432,133 @@ dt_parse_iso_zone_lenient(const char *str, size_t len, int *op) {
     return n;
 }
 
+#ifdef DT_PARSE_ISO_TNT
+/*
+ * Count number of delimiting dashes, Ws or Qs in date string like
+ *  5879611-07-11, or 2012-Q4-85, or 10000W521
+ * Allows both ISO8601 and extended Tarantool datetime formats
+ */
+static size_t
+count_delims(const unsigned char *p, size_t i, size_t len) {
+    size_t n = 0;
+
+    for (; i < len; i++) {
+        switch (p[i]) {
+        case '0': case '1': case '2': case '3': case '4':
+        case '5': case '6': case '7': case '8': case '9':
+            continue;
+        case 'Q': case 'W':
+        case '-':
+            n++;
+            continue;
+        }
+        break;
+    }
+    return n;
+}
+#endif
 /*
  *  Basic      Extended
  *  20121224   2012-12-24   Calendar date   (ISO 8601)
  *  2012359    2012-359     Ordinal date    (ISO 8601)
  *  2012W521   2012-W52-1   Week date       (ISO 8601)
  *  2012Q485   2012-Q4-85   Quarter date
+ *
+ *  Tarantool extended ranges
+ * #ifdef DT_PARSE_ISO_TNT
+ *  -001-12-31      0000-01-01
+ *  -5879610-06-22  5879611-07-11
+ * #endif
  */
 size_t
 dt_parse_iso_date(const char *str, size_t len, dt_t *dtp) {
-    const unsigned char *p;
+    const unsigned char *p = (const unsigned char *)str;
     int y, x, d;
     size_t n;
     dt_t dt;
+    int head_n;
+#ifdef DT_PARSE_ISO_TNT
+    int sign = +1;
+    int dashes_n;
 
-    p = (const unsigned char *)str;
-    n = count_digits(p, 0, len);
+    if (p[0] == '-') {
+        sign = -1;
+        p++;
+        len--;
+    }
+    dashes_n = count_delims(p, 0, len);
+#endif
+
+    head_n = n = count_digits(p, 0, len);
     switch (n) {
+#ifdef DT_PARSE_ISO_TNT
+        case 3: /* -001-01-01 | 100W521 (extended Tarantool range) */
+            if (!dashes_n)
+                return 0;
+            y = parse_number(p, 0, 3);
+            break;
+        case 4: /* -2001 (extended Tarantool range) | 2001-01-01 | 1000W521 */
+            y = parse_number(p, 0, 4);
+            break;
+        case 5: /* 10000-01-01 | 10000W521 (extended Tarantool range) */
+        case 6: /* 109000-01-01 | 109000W521 (extended Tarantool range) */
+            if (!dashes_n)
+                return 0;
+            y = parse_number(p, 0, n);
+            break;
+        case 7: /* 5879611-07-11 | 1000000W521 (extended Tarantool range) */
+            if (dashes_n > 0) {
+                y = parse_number(p, 0, 7);
+                break;
+            }
+            /* 2012359 (basic ordinal date) */
+            y = parse_number(p, 0, 4);
+            d = parse_number(p, 4, 3);
+            p += 7;
+            goto yd;
+#else
         case 4: /* 2012 (year) */
             y = parse_number(p, 0, 4);
             break;
         case 7: /* 2012359 (basic ordinal date) */
             y = parse_number(p, 0, 4);
             d = parse_number(p, 4, 3);
+            p += 7;
             goto yd;
+#endif
         case 8: /* 20121224 (basic calendar date) */
             y = parse_number(p, 0, 4);
             x = parse_number(p, 4, 2);
             d = parse_number(p, 6, 2);
+            p += 8;
             goto ymd;
         default:
             return 0;
     }
 
-    if (len < 8)
+    if (len < (n + 4))
         return 0;
 
-    n = count_digits(p, 5, len);
-    switch (p[4]) {
+    p += n;
+    n = count_digits(p, 1, len);
+    switch (p[0]) {
         case '-': /* 2012-359 | 2012-12-24 | 2012-W52-1 | 2012-Q4-85 */
             break;
 #ifndef DT_PARSE_ISO_STRICT
         case 'Q': /* 2012Q485 */
             if (n != 3)
                 return 0;
-            x = parse_number(p, 5, 1);
-            d = parse_number(p, 6, 2);
-            n = 8;
+            x = parse_number(p, 1, 1);
+            d = parse_number(p, 2, 2);
+            p += 4;
             goto yqd;
 #endif
         case 'W': /* 2012W521 */
             if (n != 3)
                 return 0;
-            x = parse_number(p, 5, 2);
-            d = parse_number(p, 7, 1);
-            n = 8;
+            x = parse_number(p, 1, 2);
+            d = parse_number(p, 3, 1);
+            p += 4;
             goto ywd;
         default:
             return 0;
@@ -496,69 +568,89 @@ dt_parse_iso_date(const char *str, size_t len, dt_t *dtp) {
         case 0: /* 2012-Q4-85 | 2012-W52-1 */
             break;
         case 2: /* 2012-12-24 */
-            if (p[7] != '-' || count_digits(p, 8, len) != 2)
+            if (p[3] != '-' || count_digits(p, 4, len) != 2)
                 return 0;
-            x = parse_number(p, 5, 2);
-            d = parse_number(p, 8, 2);
-            n = 10;
+            x = parse_number(p, 1, 2);
+            d = parse_number(p, 4, 2);
+            p += 6;
             goto ymd;
         case 3: /* 2012-359 */
-            d = parse_number(p, 5, 3);
-            n = 8;
+            d = parse_number(p, 1, 3);
+            p += 4;
             goto yd;
         default:
             return 0;
     }
 
-    if (len < 10)
+    if (len < (head_n + 6))
         return 0;
 
-    n = count_digits(p, 6, len);
-    switch (p[5]) {
+    n = count_digits(p, 2, len);
+    switch (p[1]) {
 #ifndef DT_PARSE_ISO_STRICT
         case 'Q': /* 2012-Q4-85 */
-            if (n != 1 || p[7] != '-' || count_digits(p, 8, len) != 2)
+            if (n != 1 || p[3] != '-' || count_digits(p, 4, len) != 2)
                 return 0;
-            x = parse_number(p, 6, 1);
-            d = parse_number(p, 8, 2);
-            n = 10;
+            x = parse_number(p, 2, 1);
+            d = parse_number(p, 4, 2);
+            p += 6;
             goto yqd;
 #endif
         case 'W': /* 2012-W52-1 */
-            if (n != 2 || p[8] != '-' || count_digits(p, 9, len) != 1)
+            if (n != 2 || p[4] != '-' || count_digits(p, 5, len) != 1)
                 return 0;
-            x = parse_number(p, 6, 2);
-            d = parse_number(p, 9, 1);
-            n = 10;
+            x = parse_number(p, 2, 2);
+            d = parse_number(p, 5, 1);
+            p += 6;;
             goto ywd;
         default:
             return 0;
     }
 
   yd:
+#ifdef DT_PARSE_ISO_TNT
+    if (!dt_from_yd_checked(sign * y, d, &dt))
+        return 0;
+#else
     if (!dt_valid_yd(y, d))
         return 0;
     dt = dt_from_yd(y, d);
+#endif
     goto finish;
 
   ymd:
+#ifdef DT_PARSE_ISO_TNT
+    if (!dt_from_ymd_checked(sign * y, x, d, &dt))
+        return 0;;
+#else
     if (!dt_valid_ymd(y, x, d))
         return 0;
     dt = dt_from_ymd(y, x, d);
+#endif
     goto finish;
 
 #ifndef DT_PARSE_ISO_STRICT
   yqd:
+#ifdef DT_PARSE_ISO_TNT
+    if (!dt_from_yqd_checked(sign * y, x, d, &dt))
+        return 0;
+#else
     if (!dt_valid_yqd(y, x, d))
         return 0;
     dt = dt_from_yqd(y, x, d);
+#endif
     goto finish;
 #endif
 
   ywd:
+#ifdef DT_PARSE_ISO_TNT
+    if (!dt_from_ywd_checked(sign * y, x, d, &dt))
+        return 0;
+#else
     if (!dt_valid_ywd(y, x, d))
         return 0;
     dt = dt_from_ywd(y, x, d);
+#endif
 
   finish:
 #ifndef DT_PARSE_ISO_YEAR0
@@ -567,7 +659,7 @@ dt_parse_iso_date(const char *str, size_t len, dt_t *dtp) {
 #endif
     if (dtp)
         *dtp = dt;
-    return n;
+    return (p - (const unsigned char *)str);
 }
 
 /*

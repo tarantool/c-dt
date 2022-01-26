@@ -55,6 +55,9 @@
 #  define dt_from_ymd DT_NAME(DT_NAMESPACE, dt_from_ymd)
 #  define dt_from_yqd DT_NAME(DT_NAMESPACE, dt_from_yqd)
 #  define dt_from_ywd DT_NAME(DT_NAMESPACE, dt_from_ywd)
+#  ifdef DT_PARSE_ISO_TNT
+#    define dt_from_ymd_checked DT_NAME(DT_NAMESPACE, dt_from_ymd_checked)
+#  endif
 #  define dt_leap_year DT_NAME(DT_NAMESPACE, dt_leap_year)
 #  define dt_month DT_NAME(DT_NAMESPACE, dt_month)
 #  define dt_parse_iso_date DT_NAME(DT_NAMESPACE, dt_parse_iso_date)

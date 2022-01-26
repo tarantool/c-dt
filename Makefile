@@ -142,7 +142,9 @@ HARNESS_DEPS = \
 .SUFFIXES:
 .SUFFIXES: .o .c .t
 
-.PHONY: check-asan test gcov cover clean
+.PHONY: check-asan test test-tnt gcov cover clean all
+
+all: $(HARNESS_EXES)
 
 .o.t:
 	$(CC) $(LDFLAGS) $< $(HARNESS_DEPS) -o $@
@@ -283,12 +285,18 @@ t/ywd.o: \
 t/zone.o: \
 	$(HARNESS_DEPS) t/zone.c
 
-test: $(HARNESS_EXES) 
+test: all
 	@prove $(HARNESS_EXES)
 
 check-asan:
-	@$(MAKE) DCFLAGS="-O1 -g -faddress-sanitizer -fno-omit-frame-pointer" \
-	DLDFLAGS="-g -faddress-sanitizer" test
+	@$(MAKE) DCFLAGS="-O1 -g -fsanitize=address -fno-omit-frame-pointer" \
+	DLDFLAGS="-g -fsanitize=address" test
+
+test-tnt:
+	@$(MAKE) \
+	DCFLAGS="-O0 -g -ggdb -DDT_PARSE_ISO_TNT=1 -DDT_PARSE_ISO_YEAR0=1" \
+	DLDFLAGS="-g -ggdb" \
+	test
 
 gcov:
 	@$(MAKE) DCFLAGS="-O0 -g -coverage" DLDFLAGS="-coverage" test
