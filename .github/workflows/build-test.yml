@@ -1,0 +1,30 @@
+name: build-test
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: true
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+
+    steps:
+    - uses: actions/checkout@v2
+      with:
+        fetch-depth: 0
+
+    - name: Build
+      run: make all
+
+    - name: Test Tarantool ISO-8601 extensions
+      shell: bash
+      run: make test-tnt
+
+    - name: Check ASAN build
+      shell: bash
+      run: |
+        make clean
+        make check-tnt-asan
+

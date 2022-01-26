@@ -288,15 +288,23 @@ t/zone.o: \
 test: all
 	@prove $(HARNESS_EXES)
 
+ENABLE_TNT_DEFINES= -DDT_PARSE_ISO_TNT=1 -DDT_PARSE_ISO_YEAR0=1
+
+test-tnt:
+	@$(MAKE) \
+	DCFLAGS="-O0 -g -ggdb $(ENABLE_TNT_DEFINES)" \
+	DLDFLAGS="-g -ggdb" \
+	test
+
 check-asan:
 	@$(MAKE) DCFLAGS="-O1 -g -fsanitize=address -fno-omit-frame-pointer" \
 	DLDFLAGS="-g -fsanitize=address" test
 
-test-tnt:
-	@$(MAKE) \
-	DCFLAGS="-O0 -g -ggdb -DDT_PARSE_ISO_TNT=1 -DDT_PARSE_ISO_YEAR0=1" \
-	DLDFLAGS="-g -ggdb" \
-	test
+
+check-tnt-asan:
+	@$(MAKE) DCFLAGS="-O1 -g -fsanitize=address $(ENABLE_TNT_DEFINES)" \
+	DLDFLAGS="-g -fsanitize=address" test
+
 
 gcov:
 	@$(MAKE) DCFLAGS="-O0 -g -coverage" DLDFLAGS="-coverage" test
