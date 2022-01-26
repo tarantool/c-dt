@@ -29,9 +29,15 @@ since the zero epoch, December 31 of the year zero in the proleptic Gregorian
 calendar. The supported date range is from -5879610-06-22 (C<INT32_MIN>) 
 to +5879611-07-11 (C<INT32_MAX>).
 
-Functions provided by this library doesn't guard against integer overflows, 
-it's the callers responsibility to ensure that dates and date arithmetic is 
-within the supported range.
+Functions provided by this library doesn't usually guard against integer
+overflows, it's the callers responsibility to ensure that dates and date
+arithmetic is within the supported range.
+
+But there is a Tarantool extension mode activated if C<DT_PARSE_ISO_TNT> macro
+defined, when C<dt_from_*_checked> functions become available which validate
+input arguments and internally operate using 64-bit arithmetics, thus they avoid
+any sort of 32-bit overflow. Use this set of functions if you need to deal with
+extended years range, outside of standard [0001..9999].
 
 =head1 FUNCTIONS
 
@@ -144,6 +150,42 @@ I<quarter> of the year and I<day> of the quarter constitute a valid date.
 
 Returns a boolean indicating whether or not the given week date: I<year>, 
 I<week> of the year and I<day> of the week constitute a valid date.
+
+=head2 dt_from_yd_checked
+
+    bool     dt_from_yd_checked (int y, int d, dt_t *val);
+
+Returns a boolean indicating whether or not the given ordinal date: I<year>
+and I<day> of the year constitute a valid date.
+
+If input data is valid then return value is passed via C<val> pointer.
+
+=head2 dt_from_ymd_checked
+
+    bool     dt_from_ymd_checked(int y, int m, int d, dt_t *val);
+
+Returns a boolean indicating whether or not the given calendar date: I<year>,
+I<month> of the year and I<day> of the month constitute a valid date.
+
+If input data is valid then return value is passed via C<val> pointer.
+
+=head2 dt_from_yqd_checked
+
+    bool     dt_from_yqd_checked(int y, int q, int d, dt_t *val);
+
+Returns a boolean indicating whether or not the given quarter date: I<year>,
+I<quarter> of the year and I<day> of the quarter constitute a valid date.
+
+If input data is valid then return value is passed via C<val> pointer.
+
+=head2 dt_from_ywd_checked
+
+    bool     dt_from_ywd_checked(int y, int w, int d, dt_t *val);
+
+Returns a boolean indicating whether or not the given week date: I<year>,
+I<week> of the year and I<day> of the week constitute a valid date.
+
+If input data is valid then return value is passed via C<val> pointer.
 
 =head2 dt_to_struct_tm
 

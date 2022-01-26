@@ -24,7 +24,9 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 #include <assert.h>
+#include <inttypes.h>
 #include "dt_core.h"
+#include "dt_util.h"
 
 #define LEAP_YEAR(y) \
     (((y) & 3) == 0 && ((y) % 100 != 0 || (y) % 400 == 0))
@@ -93,6 +95,87 @@ dt_from_ywd(int y, int w, int d) {
     dt += w * 7 + d - 7;
     return dt;
 }
+
+#ifdef DT_PARSE_ISO_TNT
+/*
+ * In addition to standard date/month validations we need to check
+ * validity of a day range, so we have a chance to intercept
+ * 32-bit dt_t overflow/underflow. So we merge `dt_valid_*` and `dt_from_*`
+ * set of functions.
+ */
+
+typedef int64_t dt64_t;
+
+static inline bool
+dt64_from_yd(int y, int d, dt64_t *v, bool check) {
+    if (d < 1 || d > dt_days_in_year(y))
+        return false;
+    int64_t y64 = y - 1;
+    int64_t d64 = d;
+    if (y64 < 0) {
+        const int64_t n400 = 1 - y64/400;
+        y64 += n400 * 400;
+        d64 -= n400 * 146097;
+    }
+    *v = 365 * y64 + y64/4 - y64/100 + y64/400 + d64 + DT_EPOCH_OFFSET;
+    if (check && (*v < INT32_MIN || *v > INT32_MAX))
+        return false;
+    return true;
+}
+
+bool
+dt_from_yd_checked(int y, int d, dt_t *val) {
+    dt64_t v = 0;
+    if (!dt64_from_yd(y, d, &v, true))
+           return false;
+#ifndef NDEBUG
+    int32_t highw = v >> 32;
+    assert(highw == 0 || highw == -1);
+#endif
+    *val = (dt_t)v;
+    return true;
+}
+
+bool
+dt_from_ymd_checked(int y, int m, int d, dt_t *val) {
+    if (m < 1 || m > 12)
+        return false;
+    if (d < 1 || d > dt_days_in_month(y, m))
+        return false;
+    return dt_from_yd_checked(y, days_preceding_month[LEAP_YEAR(y)][m] + d, val);
+}
+
+bool
+dt_from_yqd_checked(int y, int q, int d, dt_t *val) {
+    if (q < 1 || q > 4)
+        return false;
+    if (d < 1 || d > dt_days_in_quarter(y, q))
+        return false;
+    return dt_from_yd_checked(y, days_preceding_quarter[LEAP_YEAR(y)][q] + d, val);
+}
+
+bool
+dt_from_ywd_checked(int y, int w, int d, dt_t *val) {
+    if (d < 1 || d > 7)
+        return false;
+    if (w < 1 || w > dt_weeks_in_year(y))
+        return false;
+
+    /* The first week of the year always contains 4 January. */
+    dt64_t dt = 0;
+    bool rc = dt64_from_yd(y, 4, &dt, false);
+    assert(rc);
+    (void)rc;
+
+    dt -= dt_dow(dt);
+    dt += w * 7 + d - 7;
+    if (dt < INT32_MIN || dt > INT32_MAX)
+        return false;
+
+    *val = (dt_t)dt;
+    return true;
+}
+#endif
 
 
 #ifndef DT_NO_SHORTCUTS

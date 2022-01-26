@@ -59,6 +59,13 @@ void     dt_to_ymd       (dt_t dt, int *y, int *m, int *d);
 void     dt_to_yqd       (dt_t dt, int *y, int *q, int *d);
 void     dt_to_ywd       (dt_t dt, int *y, int *w, int *d);
 
+#ifdef DT_PARSE_ISO_TNT
+bool     dt_from_yd_checked (int y, int d, dt_t *val);
+bool     dt_from_ymd_checked(int y, int m, int d, dt_t *val);
+bool     dt_from_yqd_checked(int y, int q, int d, dt_t *val);
+bool     dt_from_ywd_checked(int y, int w, int d, dt_t *val);
+#endif
+
 int      dt_rdn          (dt_t dt);
 dt_dow_t dt_dow          (dt_t dt);
 
