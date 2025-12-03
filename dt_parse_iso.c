@@ -24,6 +24,7 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 #include <stddef.h>
+#include <stdlib.h>
 #include "dt_core.h"
 #include "dt_valid.h"
 
@@ -62,7 +63,8 @@ static const int pow_10[10] = {
 };
 
 /*
- *  fffffffff
+ * Read all digits, but convert up to 9 only.
+ *  fffffffff[f...]
  */
 
 static size_t
@@ -79,12 +81,43 @@ parse_fraction_digits(const unsigned char *p, size_t i, size_t len, int *fp) {
     return n;
 }
 
+static void
+handle_frac_case(int frac_case, int *fp, int *mp, int *sp)
+{
+    double w = 60.0 * *fp / 1E9; /* .hh or .mm */
+    switch (frac_case) {
+        case 1:
+            *mp = (int) w;
+            w = 60.0 * (w - *mp); /* .hh -> .mm */
+            /* fallthrough */
+        case 2:
+            *sp = (int) w;
+            /* We prefer to truncate hour or minute fractions
+             * to seconds precision for simplicity:
+             * no rounding = no overflow to mins/hours/etc.
+             * If somebody want a second fraction,
+             * they must use explicit representation s,f.
+             */
+            *fp = 0; /* *fp = (int) ((w - *sp) * 1E9); */
+            break;
+        default:
+            abort();
+    }
+}
+
 /*
+ * The representation of time format is defined in ISO 8601-1:2019, 5.3.1.
+ * Representations with decimal fraction is defined in 5.3.1.4.
+ * More than 9 fraction digits are truncated by the routine.
  *  hh
+ *  hh.fffffffff[f...]
+ *  hh,fffffffff[f...]
  *  hhmm
+ *  hhmm.fffffffff[f...]
+ *  hhmm,fffffffff[f...]
  *  hhmmss
- *  hhmmss.fffffffff
- *  hhmmss,fffffffff
+ *  hhmmss.fffffffff[f...]
+ *  hhmmss,fffffffff[f...]
  */
 
 size_t
@@ -92,6 +125,7 @@ dt_parse_iso_time_basic(const char *str, size_t len, int *sp, int *fp) {
     const unsigned char *p;
     int h, m, s, f;
     size_t n;
+    int frac_case;
 
     p = (const unsigned char *)str;
     n = count_digits(p, 0, len);
@@ -99,29 +133,35 @@ dt_parse_iso_time_basic(const char *str, size_t len, int *sp, int *fp) {
     switch (n) {
         case 2: /* hh */
             h = parse_number(p, 0, 2);
-            goto hms;
+            frac_case = 1;
+            break;
         case 4: /* hhmm */
             h = parse_number(p, 0, 2);
             m = parse_number(p, 2, 2);
-            goto hms;
+            frac_case = 2;
+            break;
         case 6: /* hhmmss */
             h = parse_number(p, 0, 2);
             m = parse_number(p, 2, 2);
             s = parse_number(p, 4, 2);
+            frac_case = 0;
             break;
         default:
             return 0;
     }
 
-    /* hhmmss.fffffffff */
+    /* .fffffffff[f...] */
     if (n < len && (p[n] == '.' || p[n] == ',')) {
-        size_t r = parse_fraction_digits(p, ++n, len, &f);
+        ++n;
+        size_t r = parse_fraction_digits(p, n, len, &f);
         if (!r)
             return 0;
         n += r;
+
+        if (frac_case > 0)
+            handle_frac_case(frac_case, &f, &m, &s);
     }
 
-  hms:
     if (h > 23 || m > 59 || s > 59) {
         if (!(h == 24 && m == 0 && s == 0 && f == 0))
             return 0;
@@ -199,11 +239,18 @@ dt_parse_iso_zone_basic(const char *str, size_t len, int *op) {
 }
 
 /*
+ * The representation of time format is defined in ISO 8601-1:2019, 5.3.1.
+ * Representations with decimal fraction is defined in 5.3.1.4.
+ * More than 9 fraction digits are truncated by the routine.
  *  hh
+ *  hh.fffffffff[f...]
+ *  hh,fffffffff[f...]
  *  hh:mm
+ *  hh:mm.fffffffff[f...]
+ *  hh:mm,fffffffff[f...]
  *  hh:mm:ss
- *  hh:mm:ss.fffffffff
- *  hh:mm:ss,fffffffff
+ *  hh:mm:ss.fffffffff[f...]
+ *  hh:mm:ss,fffffffff[f...]
  */
 
 size_t
@@ -211,6 +258,7 @@ dt_parse_iso_time_extended(const char *str, size_t len, int *sp, int *fp) {
     const unsigned char *p;
     int h, m, s, f;
     size_t n;
+    int frac_case;
 
     p = (const unsigned char *)str;
     if (count_digits(p, 0, len) != 2)
@@ -219,31 +267,43 @@ dt_parse_iso_time_extended(const char *str, size_t len, int *sp, int *fp) {
     h = parse_number(p, 0, 2);
     m = s = f = 0;
     n = 2;
+    frac_case = 1;
     
-    if (len < 3 || p[2] != ':')
+    if (len < 3 || (p[2] != ':' && p[2] != ',' && p[2] != '.'))
         goto hms;
+    else if (p[2] != ':')
+        goto parse_frac;
 
     if (count_digits(p, 3, len) != 2)
         return 0;
 
     m = parse_number(p, 3, 2);
     n = 5;
+    frac_case = 2;
 
-    if (len < 6 || p[5] != ':')
+    if (len < 6 || (p[5] != ':' && p[5] != ',' && p[5] != '.'))
         goto hms;
+    else if (p[5] != ':')
+        goto parse_frac;
 
     if (count_digits(p, 6, len) != 2)
         return 0;
 
     s = parse_number(p, 6, 2);
     n = 8;
+    frac_case = 0;
 
-    /* hh:mm:ss.fffffffff */
+parse_frac:
+    /* .fffffffff[f...] */
     if (n < len && (p[n] == '.' || p[n] == ',')) {
-        size_t r = parse_fraction_digits(p, ++n, len, &f);
+        ++n;
+        size_t r = parse_fraction_digits(p, n, len, &f);
         if (!r)
             return 0;
         n += r;
+
+        if (frac_case > 0)
+            handle_frac_case(frac_case, &f, &m, &s);
     }
 
   hms:
@@ -665,7 +725,11 @@ dt_parse_iso_date(const char *str, size_t len, dt_t *dtp) {
 /*
  *  Basic               Extended
  *  T12                 N/A
+ *  T12.123456789       N/A
+ *  T12,123456789       N/A
  *  T1230               T12:30
+ *  T1230.123456789     T12:30.123456789
+ *  T1230,123456789     T12:30,123456789
  *  T123045             T12:30:45
  *  T123045.123456789   T12:30:45.123456789
  *  T123045,123456789   T12:30:45,123456789
